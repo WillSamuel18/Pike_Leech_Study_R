@@ -7,7 +7,10 @@
 
 library(tidyverse)
 library(ggplot2)
+library(fmsb)     #For VIF function
+library(ggcorrplot)  #For correlation matrix
 
+#
 
 
 # Data manipulation --------------------------------------------------------
@@ -60,7 +63,9 @@ sd(BIA.data$Vent_temp, na.rm = T) #SD = 0.08 C
 #at both sampling events
 BIA.data <- BIA.data %>% 
   mutate(Vent_temp = ifelse(is.na(Vent_temp), 1.08, Vent_temp),
-         "whole_weight" = Weight_kg*1000) #need to conduct the BIA model in g not kg
+         "whole_weight" = Weight_kg*1000, #need to conduct the BIA model in g not kg
+         DML_length = DML_length/10, #need to use CM not MM
+         DV_length = DV_length/10)
 
 
 
@@ -207,7 +212,7 @@ newcap.data <- read.csv("Data/HL_Capture_data_formatted_with_predictions.csv")
 str(newcap.data)
 
 
-#Calculate fultons condition factor
+#Calculate fultons condition factor and BCI
 newcap.data <- newcap.data %>% 
   mutate("Ful_cond_fact" = (100*((Weight_kg*1000)/((Fork_length_mm/10)^3))), #calculating in mm and g. 
          #"BCI" = Weight_kg/Fork_length_mm,
@@ -215,7 +220,29 @@ newcap.data <- newcap.data %>%
          "BCI" = rstandard(glm(log10(Fork_length_mm)~log10(Weight_kg*1000))), 
          "Leech_load" = Leech_count/Fork_length_mm) #standardizing to body length 
 
+#See how the BIA predictions compare to leech infestations
+ggplot(newcap.data, aes(predDM, Leech_load))+
+  geom_point()+
+  geom_smooth()+
+  theme_bw()
 
+ggplot(newcap.data, aes(predDM, Leech_count))+
+  geom_point()+
+  geom_smooth()+
+  theme_bw()
+
+
+ggplot(newcap.data, aes(predDL, Leech_load))+
+  geom_point()+
+  geom_smooth()+
+  theme_bw()
+
+ggplot(newcap.data, aes(predDL, Leech_count))+
+  geom_point()+
+  geom_smooth()+
+  theme_bw()
+
+#Evaluation Fultons Condition Factor
 ggplot(newcap.data, aes(Ful_cond_fact, Leech_load))+
   geom_point()+
   geom_smooth(method="lm")+
@@ -226,6 +253,7 @@ ggplot(newcap.data, aes(Ful_cond_fact, Leech_count))+
   geom_smooth(method="lm")+
   theme_bw()
 
+#Basic Body Composition Index
 ggplot(newcap.data, aes(BCI, Leech_load))+
   geom_point()+
   geom_smooth(method="lm")+
@@ -236,6 +264,16 @@ ggplot(newcap.data, aes(BCI, Leech_count))+
   geom_smooth(method="lm")+
   theme_bw()
 
+#Does Mercury have an effect on body condition? 
+ggplot(newcap.data, aes(predDM, Mercury))+
+  geom_point()+
+  geom_smooth()+
+  theme_bw()
+
+ggplot(newcap.data, aes(predDL, Mercury))+
+  geom_point()+
+  geom_smooth()+
+  theme_bw()
 
 ggplot(newcap.data, aes(Ful_cond_fact, Mercury))+
   geom_point()+
@@ -248,6 +286,17 @@ ggplot(newcap.data, aes(BCI, Mercury))+
   theme_bw()
 
 
+#How does age affect it? 
+ggplot(newcap.data, aes(predDM, Age))+
+  geom_point()+
+  geom_smooth(method="lm")+
+  theme_bw()
+
+ggplot(newcap.data, aes(predDL, Age))+
+  geom_point()+
+  geom_smooth(method="lm")+
+  theme_bw()
+
 ggplot(newcap.data, aes(Ful_cond_fact, Age))+
   geom_point()+
   geom_smooth(method="lm")+
@@ -258,7 +307,7 @@ ggplot(newcap.data, aes(BCI, Age))+
   geom_smooth(method="lm")+
   theme_bw()
 
-
+#Does mercuury affect leech load?
 ggplot(newcap.data, aes(Mercury, Leech_load))+
   geom_point()+
   geom_smooth(method="lm")+
@@ -280,21 +329,25 @@ Female <- newcap.data %>% subset(Sex == "F")
 Male <- newcap.data %>% subset(Sex == "M")
 t.test(Female$Leech_count, Male$Leech_count) #not a significant difference, maybe with more data
 
+
+#Does sex affect mercury concentration? 
 ggplot(newcap.data, aes(Sex, Mercury))+
   geom_violin()+
   geom_boxplot()+
   geom_jitter()+
   theme_bw()
 
-t.test(Female$Mercury, Male$Mercury) 
+t.test(Female$Mercury, Male$Mercury) #No significant difference
 
 
+#Does age affect mercury concentration? 
 ggplot(newcap.data, aes(Age, Mercury))+
   geom_point()+
   geom_smooth(method="lm")+
   theme_bw()
 
 
+#Does size affect mercury concentration? 
 ggplot(newcap.data, aes(Fork_length_mm, Mercury))+
   geom_point()+
   geom_smooth(method="lm")+
@@ -309,6 +362,71 @@ ggplot(newcap.data, aes(Age, Leech_load))+
   theme_bw()
 
 
+
+
+#Conduct VIF on all these predictors  -------------------------------------
+
+newcap.data <- read.csv("Data/HL_Capture_data_formatted_with_predictions.csv")
+
+#Calculate fultons condition factor and BCI
+newcap.data <- newcap.data %>% 
+  mutate("Ful_cond_fact" = (100*((Weight_kg*1000)/((Fork_length_mm/10)^3))), #calculating in mm and g. 
+         #"BCI" = Weight_kg/Fork_length_mm,
+         ######Body condition index (Bentley & Schindler 2013)
+         "BCI" = rstandard(glm(log10(Fork_length_mm)~log10(Weight_kg*1000))), 
+         "Leech_load" = Leech_count/Fork_length_mm) #standardizing to body length 
+
+str(newcap.data)
+
+
+
+VIF<-function(X) {
+  #Computes Variance Inflation Factors for a Predictor Matrix
+  #INPUTS:
+  #X is a matrix (or data frame) of the predictors (no column of ones).
+  cat("REMINDER: Your input matrix should not include the response\n")
+  a<-1/sqrt(dim(X)[1]-1)*scale(X)
+  b<-cbind(diag(solve(t(a)%*%a)))
+  dimnames(b)<-list(dimnames(X)[[2]],"VIF")
+  return(b)
+}
+
+
+
+Data_for_VIF <- newcap.data  %>% 
+  select(Leech_count, Mercury, Age, predDM, predDL, 
+         Ful_cond_fact, Fork_length_mm, Weight_kg, Girth_mm)
+
+Data_for_VIF <- Data_for_VIF %>% 
+  mutate(across(everything(), as.numeric)) %>% 
+  na.omit()
+
+#Data_for_VIF_matrix <- as.matrix(Data_for_VIF)
+
+
+str(Data_for_VIF)
+
+
+
+
+#Calculate using the other function
+postVIF <- VIF(Data_for_VIF)
+postVIF
+#VIF
+#Leech_count     1.694051
+#Mercury         1.144168
+#Age             3.328338
+#predDM          6.244872
+#predDL          2.593411
+#Ful_cond_fact   5.695033
+#Fork_length_mm 31.564024  Obviously fork length and weight are correlated with eachother, we just wont use those in the models.
+#Weight_kg      44.259126
+#Girth_mm        2.164939
+
+
+corr <- cor(Data_for_VIF)
+ggcorrplot(corr, type = "lower", lab = TRUE)
+#Age is also correlated to length/weight, but it didn't flag in the VIF so I think it's okay. 
 
 
 
