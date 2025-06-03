@@ -9,6 +9,7 @@ library(tidyverse)
 library(ggplot2)
 library(fmsb)     #For VIF function
 library(ggcorrplot)  #For correlation matrix
+library(lme4)
 
 #
 
@@ -187,6 +188,16 @@ sum.pred.df <- pred.df %>%
 
 newcap.data <- merge(cap.data, sum.pred.df, by = "Sample_num")
 
+
+#Calculate fultons condition factor and BCI
+newcap.data <- newcap.data %>% 
+  mutate("Ful_cond_fact" = (100*((Weight_kg*1000)/((Fork_length_mm/10)^3))), #calculating in mm and g. 
+         #"BCI" = Weight_kg/Fork_length_mm,
+         ######Body condition index (Bentley & Schindler 2013)
+         "BCI" = rstandard(glm(log10(Fork_length_mm)~log10(Weight_kg*1000))), 
+         "Leech_load" = Leech_count/Fork_length_mm) #standardizing to body length 
+
+
 write.csv(newcap.data, "Data/HL_Capture_data_formatted_with_predictions.csv")
 
 
@@ -212,13 +223,6 @@ newcap.data <- read.csv("Data/HL_Capture_data_formatted_with_predictions.csv")
 str(newcap.data)
 
 
-#Calculate fultons condition factor and BCI
-newcap.data <- newcap.data %>% 
-  mutate("Ful_cond_fact" = (100*((Weight_kg*1000)/((Fork_length_mm/10)^3))), #calculating in mm and g. 
-         #"BCI" = Weight_kg/Fork_length_mm,
-         ######Body condition index (Bentley & Schindler 2013)
-         "BCI" = rstandard(glm(log10(Fork_length_mm)~log10(Weight_kg*1000))), 
-         "Leech_load" = Leech_count/Fork_length_mm) #standardizing to body length 
 
 #See how the BIA predictions compare to leech infestations
 ggplot(newcap.data, aes(predDM, Leech_load))+
@@ -367,15 +371,6 @@ ggplot(newcap.data, aes(Age, Leech_load))+
 #Conduct VIF on all these predictors  -------------------------------------
 
 newcap.data <- read.csv("Data/HL_Capture_data_formatted_with_predictions.csv")
-
-#Calculate fultons condition factor and BCI
-newcap.data <- newcap.data %>% 
-  mutate("Ful_cond_fact" = (100*((Weight_kg*1000)/((Fork_length_mm/10)^3))), #calculating in mm and g. 
-         #"BCI" = Weight_kg/Fork_length_mm,
-         ######Body condition index (Bentley & Schindler 2013)
-         "BCI" = rstandard(glm(log10(Fork_length_mm)~log10(Weight_kg*1000))), 
-         "Leech_load" = Leech_count/Fork_length_mm) #standardizing to body length 
-
 str(newcap.data)
 
 
@@ -430,10 +425,61 @@ ggcorrplot(corr, type = "lower", lab = TRUE)
 
 
 
+# Modeling process --------------------------------------------------------
+
+newcap.data <- read.csv("Data/HL_Capture_data_formatted_with_predictions.csv")
+
+#Calculate fultons condition factor and BCI
+newcap.data <- newcap.data %>% 
+  mutate("Ful_cond_fact" = (100*((Weight_kg*1000)/((Fork_length_mm/10)^3))), #calculating in mm and g. 
+         #"BCI" = Weight_kg/Fork_length_mm,
+         ######Body condition index (Bentley & Schindler 2013)
+         "BCI" = rstandard(glm(log10(Fork_length_mm)~log10(Weight_kg*1000))), 
+         "Leech_load" = Leech_count/Fork_length_mm,
+        Date = as.Date(Date, format = "%m/%d/%Y"),
+         "Year" = lubridate::year(Date)) #standardizing to body length 
+
+str(newcap.data)
+
+
+
+model <- lm(predDL ~ Leech_count, data = newcap.data)
+summary(model)
+
+model <- lmer(predDL ~ Leech_count + (1|Year), data = newcap.data)
+summary(model)
 
 
 
 
+# PCA Analysis ------------------------------------------------------------
+
+
+newcap.data <- read.csv("Data/HL_Capture_data_formatted_with_predictions.csv")
+str(newcap.data)
+
+
+
+
+# Step 2: Handle missing data (e.g., remove rows with NA)
+pca.data <- newcap.data %>%
+  select(Leech_count, Mercury, Age, predDM, predDL, 
+         Ful_cond_fact, Fork_length_mm, Weight_kg, Girth_mm) %>% 
+  drop_na() %>% 
+  scale()
+
+#Perform PCA
+pca_result <- prcomp(pca.data, center = TRUE, scale. = TRUE)
+summary(pca_result)
+
+  pca_data <- as.data.frame(pca_result$x) %>%
+  mutate(Fish_ID = newcap.data$Fish_ID[complete.cases(numeric_data)]) # Add ID back
+
+ggplot(pca_data, aes(x = PC1, y = PC2, label = Fish_ID)) +
+  geom_point() +
+  geom_text(vjust = -0.5) +
+  theme_minimal() +
+  labs(title = "PCA: Fish Measurements", x = "PC1", y = "PC2")
 
 
 
